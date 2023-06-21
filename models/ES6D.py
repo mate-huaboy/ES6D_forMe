@@ -18,7 +18,7 @@ def get_header(in_channel, out_channel):
             nn.Conv2d(256, 128, kernel_size=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.Conv2d(128, out_channel, kernel_size=1)
+            nn.Conv2d(128, out_channel, kernel_size=1)#这里是输出的通道数，而不是本身的特征个数
         )
 
 
@@ -67,7 +67,7 @@ class ES6D(nn.Module):
         #print("cls_ids 2:", cls_ids.shape)
         cls_ids = cls_ids.view(b).long()
         obj_ids = torch.tensor([i for i in range(b)]).long().cuda()
-        px = px.view(b, -1, 4, h, w)[obj_ids, cls_ids]
+        px = px.view(b, -1, 4, h, w)[obj_ids, cls_ids]#取出对应的类别的部分
         tx = tx.view(b, -1, 3, h, w)[obj_ids, cls_ids]
         sc = sc.view(b, -1, h, w)[obj_ids, cls_ids]
         del obj_ids

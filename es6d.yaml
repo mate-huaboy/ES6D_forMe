@@ -1,9 +1,9 @@
 name: mypose
 channels:
   - https://conda.anaconda.org/open3d-admin
-  - conda-forge/mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+  # - conda-forge/mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
   - https://conda.anaconda.org/anaconda
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free
+  # - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free
   - https://repo.anaconda.com/pkgs/main
   - conda-forge
   - defaults
@@ -15,7 +15,7 @@ dependencies:
   - blas=1.0=mkl
   - bleach=3.1.0=py36_0
   - blinker=1.4=py36_0
-  - bzip2=1.0.6=3
+  # - bzip2=1.0.6=3
   - c-ares=1.15.0=h7b6447c_1001
   - ca-certificates=2020.10.14=0
   - cachetools=3.1.1=py_0
@@ -205,9 +205,9 @@ dependencies:
     - tensorflow-estimator==2.6.0
     - termcolor==1.1.0
     - threadpoolctl==3.0.0
-    - torch==1.6.0
-    - torchaudio==0.9.1
-    - torchvision==0.7.0
+    - torch
+    - torchaudio
+    - torchvision
     - tqdm==4.51.0
     - typing-extensions==3.7.4.3
     - wget==3.2

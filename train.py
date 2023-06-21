@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 import argparse
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2, 3, 4, 5, 6, 7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import warnings
 warnings.filterwarnings("ignore")
 import random
@@ -43,7 +43,7 @@ parser.add_argument('--dataset', type=str, default='tless', help='ycb, tless')
 
 parser.add_argument('--batch_size', type=int, default=64, help='batch size')
 
-parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
+parser.add_argument('--workers', type=int, default=10, help='number of data loading workers')
 
 parser.add_argument('--lr', default=0.002, help='learning rate, note that the learning rate at tless dataset is much larger than the ycb-video dataset')
 
@@ -69,6 +69,8 @@ opt = parser.parse_args()
 
 
 def main():
+    #test envirment
+    print(torch.cuda.is_available())
 
     # pre-setup
     global opt
@@ -111,7 +113,7 @@ def main():
 
         if os.path.isdir(opt.log_dir) == False:
             os.makedirs(opt.log_dir)
-
+    # per_processor(0,opt)
     mp.spawn(per_processor, nprocs=opt.gpu_number, args=(opt,))
 
 
@@ -127,7 +129,7 @@ def predict(data, estimator, lossor, opt, mode='train'):
     gt_t = data['target_t'].to(opt.gpu)
 
     model_xyz = data['model_xyz'].cpu().numpy()
-
+    xyzrgb = torch.cat([depth, rgb], dim=1)
     preds = estimator(rgb, depth, cls_ids)
 
     loss, loss_dict = lossor(preds, mask, gt_r, gt_t,  cls_ids, model_xyz)
@@ -209,7 +211,7 @@ def per_processor(gpu, opt):
 
     # init DDP model
     estimator = pose_net.ES6D(num_class=opt.num_objects).to(gpu)
-    estimator = torch.nn.parallel.DistributedDataParallel(estimator, device_ids=[gpu], output_device=gpu, find_unused_parameters=True)
+    # estimator = torch.nn.parallel.DistributedDataParallel(estimator, device_ids=[gpu], output_device=gpu, find_unused_parameters=True)
 
     # init optimizer
     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr * opt.gpu_number)
@@ -234,6 +236,7 @@ def per_processor(gpu, opt):
 
     trainloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=False,
                                              num_workers=opt.workers, pin_memory=True, sampler=sampler)
+   
 
     if gpu == 0:
 

@@ -1,0 +1,35 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Pretest",
+            "type": "python",
+            "request": "launch",
+            "program": "./datasets/tless/tless_preparation.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--tless_path", "./datasets/tless"]
+        },
+        {
+            "name": "test",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--test_only", "True" ,"--resume", "experiments/tless/GADD/checkpoint_0120.pth.tar"]
+        },
+        {
+            "name": "train",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "args": ["--resume", "experiments/tless/GADD/checkpoint_0120.pth.tar"]
+        }
+    ]
+}

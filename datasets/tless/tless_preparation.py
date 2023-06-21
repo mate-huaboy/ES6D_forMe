@@ -147,6 +147,9 @@ def get_data(trian_root_path, gt_mask):
 def prepare_data(input_data):
 
     instance_rgb_path, instance_depth_path, instance_mask_path, instance_gt_info, instance_camera_info, instance_save_dir, idx = input_data
+    #判断是否存在，如存在则直接放回
+    if os.path.exists("{}.mat".format(instance_save_dir)):
+        return None
 
     cam_scale = instance_camera_info['depth_scale']
     img = Image.open(instance_rgb_path)
