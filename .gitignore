@@ -2,3 +2,10 @@
 /datasets/tless/test_primesense
 /datasets/tless/train_pbr
 /bop_toolkit-master
+/datasets
+/models/__pycache__
+/experiments/tless/GADD/train/log
+/datasets/tless/__pycache__
+/lib/__pycache__
+/experiments
+/vis

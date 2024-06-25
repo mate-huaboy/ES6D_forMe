@@ -9,7 +9,8 @@ import math
 import scipy.io as scio
 import open3d as o3d
 import json
-
+import os
+import cv2
 class PoseDataset(data.Dataset):
 
     def __init__(self, mode, num_pt, root, add_noise=False, noise_trans = 0.03):
@@ -41,8 +42,10 @@ class PoseDataset(data.Dataset):
                 break
             if input_line[-1:] == '\n':
                 input_line = input_line[:-1]
+                if os.path.exists('{0}/{1}.mat'.format(self.file_path, input_line)):
+                    self.list.append(input_line)
+                    
 
-            self.list.append(input_line)
 
             # if len(self.list) >= 128:
             #    break
@@ -103,7 +106,6 @@ class PoseDataset(data.Dataset):
 
 
     def __getitem__(self, index):
-
         meta = scio.loadmat('{0}/{1}.mat'.format(self.file_path, self.list[index]))
         rgb = meta['rgb'].astype(np.float32)
         mask = meta['mask'].astype(np.float32)

@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 import argparse
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2, 3, 4, 5, 6, 7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import warnings
 warnings.filterwarnings("ignore")
 import random
@@ -16,20 +16,26 @@ import torch.optim as optim
 import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
+import os
 from torch.utils.tensorboard import SummaryWriter
 
 from datasets.tless.tless_dataset import PoseDataset as pose_dataset
 
 from models import ES6D as pose_net
-
+import time
 from lib.tless_evaluator import TLESSADDval
 from lib.tless_gadd_evaluator import TLESSGADDval
 
 from lib.utils import setup_logger
 from lib.utils import warnup_lr, cal_mean_std
-from lib.utils import post_processing_ycb_quaternion as post_processing
-from lib.utils import save_pred_and_gt_json
+from lib.utils import post_processing_max as post_processing
+# from lib.utils import post_processing_minloss as post_processing
+# from lib.utils import post_processing_optimization as post_processing
+import cv2
+# import torchvision.transforms as transforms
 
+from lib.utils import save_pred_and_gt_json
+from lib.visual import vis_one_rotation_matrix as visualize_so3_distribution
 st_time = time.time()
 
 parser = argparse.ArgumentParser()
@@ -37,7 +43,7 @@ parser.add_argument('--local_rank', type=int, default=0, help='gpu number')
 
 parser.add_argument('--experiment', type=str, default= "train",  help='brief description about experiment setting: train, test')
 
-parser.add_argument('--loss_type', type=str, default= "GADD",  help='trianing loss: GADD, ADD')
+parser.add_argument('--loss_type', type=str, default= "Gaussian",  help='trianing loss: GADD, ADD, Gaussian')
 
 parser.add_argument('--dataset', type=str, default='tless', help='ycb, tless')
 
@@ -45,25 +51,25 @@ parser.add_argument('--batch_size', type=int, default=64, help='batch size')
 
 parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
 
-parser.add_argument('--lr', default=0.002, help='learning rate, note that the learning rate at tless dataset is much larger than the ycb-video dataset')
+parser.add_argument('--lr', default=0.0001, help='learning rate, note that the learning rate at tless dataset is much larger than the ycb-video dataset')#0.002
 
 parser.add_argument('--lr_rate', default=0.1, help='learning rate decay rate')
 
-parser.add_argument('--warnup_iters', default=100, help='learning rate decay rate')
+parser.add_argument('--warnup_iters', default=100, help='learning rate decay rate')#100
 
-parser.add_argument('--decay_epoch', default=60, help='learning rate decay rate')
+parser.add_argument('--decay_epoch', default=3, help='learning rate decay rate')#60
 
 parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
 
 parser.add_argument('--augmentation', type=bool, default= False, help='train tless with data augmentation or not')
 
-parser.add_argument('--nepoch', type=int, default=120, help='max number of epochs to train') #
+parser.add_argument('--nepoch', type=int, default=10, help='max number of epochs to train') #120
 
 parser.add_argument('--resume', type=str, default='', help='resume ES6D model') #
 
 parser.add_argument('--test_only', type=bool, default=False, help='resume es6d model') #
 
-parser.add_argument('--start_epoch', type=int, default=0, help='which epoch to start') #
+parser.add_argument('--start_epoch', type=int, default=1, help='which epoch to start') #
 
 opt = parser.parse_args()
 
@@ -79,7 +85,7 @@ def main():
     torch.manual_seed(opt.manualSeed)
 
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '1235'
+    os.environ['MASTER_PORT'] = '12345'#1235
 
     opt.gpu_number = torch.cuda.device_count()
 
@@ -115,7 +121,7 @@ def main():
     mp.spawn(per_processor, nprocs=opt.gpu_number, args=(opt,))
 
 
-
+#预测，调用训练和测试，测试时包括后处理过程以及可视化
 def predict(data, estimator, lossor, opt, mode='train'):
 
 
@@ -126,25 +132,42 @@ def predict(data, estimator, lossor, opt, mode='train'):
     gt_r = data['target_r'].to(opt.gpu)
     gt_t = data['target_t'].to(opt.gpu)
 
-    model_xyz = data['model_xyz'].cpu().numpy()
+    # model_xyz = data['model_xyz'].cpu().numpy()
+    model_xyz = data['model_xyz'].to(opt.gpu)
 
-    preds = estimator(rgb, depth, cls_ids)
-
-    loss, loss_dict = lossor(preds, mask, gt_r, gt_t,  cls_ids, model_xyz)
+    #预测出分布的各个参数
+    pre_t,pre_r,pre_s,pre_u = estimator(rgb, depth, cls_ids,mask)#测试也是知道cls_ids的
 
     if mode == 'train':
-
+        loss, loss_dict = lossor(pre_t,pre_r,pre_s,pre_u, gt_r, gt_t,  cls_ids, model_xyz)
         return loss, loss_dict
 
     if mode == 'test':
-
+        loss, loss_dict,pre_t,R_matrix,pre_s,pre_u = lossor(pre_t,pre_r,pre_s,pre_u, gt_r, gt_t,  cls_ids, model_xyz,is_train=False)
         print(data.keys())
-        mean_xyz = data['mean_xyz'].cpu().numpy()
+        mean_xyz = data['mean_xyz'].cpu().numpy()#64*1*1*3
+
+        #可视化
+
+        # visualize_so3_distribution(R_matrix[0],pre_u[0],pre_s[0])
+        visualize_so3_distribution(R_matrix[0],gt_r[0],pre_s[0])
+
+        mean=[0.485*255.0, 0.456*255.0, 0.406*255.0]
+        std=[0.229*255.0, 0.224*255.0, 0.225*255.0]
+        cv2.imwrite("rgb.png",data['rgb'][0].numpy().transpose(1,2,0)*std+mean)
         
+        # preds['xyz'] = depth
 
-        preds['xyz'] = depth
+        # res_T = post_processing(preds, opt.sym_list)#b*3*4，由此得到最大的分数的pose，这里我们需要替换为最优算法
+        #替换如下：
+        #2）后处理：最优化or最大化
+        res_R=post_processing(R_matrix,pre_s)#返回b*3*3
+        # res_R=post_processing(R_matrix,pre_s,pre_u,5)#返回b*3*3
+        # res_R=post_processing(R_matrix,pre_s,pre_u)#返回b*3*3
 
-        res_T = post_processing(preds, opt.sym_list)
+        pre_t=pre_t.unsqueeze(2)
+        # res_T=torch.cat([res_R,gt_t.unsqueeze(2)],dim=2)
+        res_T=torch.cat([res_R,pre_t],dim=2)
         bs, _, _ = res_T.size()
 
         res_T = res_T.cpu().numpy()
@@ -175,17 +198,17 @@ def predict(data, estimator, lossor, opt, mode='train'):
 
             pred[i, :, 3] *= scale
 
-            pred[i, :, 3] += instance_mean_xyz
+            pred[i, :, 3] += instance_mean_xyz#预测出来的还得加上mean_xyz
 
-            res_T[i, :, 3] *= scale
+            res_T[i, :, 3] *= scale#res_T没有加上mean_xyz
             tar_T[i, :, 3] *= scale
             model_xyz[i] *= scale
 
             instance_id_list.append([instance_id[i]])
-            rt_list.append(res_T[i])
+            rt_list.append(res_T[i])#b*3*4
             gt_rt_list.append(tar_T[i])
             gt_cls_list.append(gt_cls[i] + 1)
-            model_list.append(model_xyz[i])
+            model_list.append(model_xyz[i].cpu().numpy())
             instance_eval_rt_list.append(pred[i])
 
         return loss, loss_dict, rt_list, gt_rt_list, gt_cls_list, model_list, instance_id_list, instance_eval_rt_list
@@ -208,25 +231,21 @@ def per_processor(gpu, opt):
 
 
     # init DDP model
-    estimator = pose_net.ES6D(num_class=opt.num_objects).to(gpu)
-    estimator = torch.nn.parallel.DistributedDataParallel(estimator, device_ids=[gpu], output_device=gpu, find_unused_parameters=True)
+    estimator = pose_net.ES6D(num_class=opt.num_objects,out_channel=32).to(gpu)
+    estimator = torch.nn.parallel.DistributedDataParallel(estimator, device_ids=[gpu], output_device=gpu, find_unused_parameters=False)
+
+    #选择要更新的网络参数
+    # for name,p in estimator.named_parameters():
+    #     if "full_net" in name or True:
+    #         p.requires_grad=True
+    #     else:
+    #         p.requires_grad=False
 
     # init optimizer
+    # optimizer = optim.Adam(filter(lambda p: p.requires_grad, estimator.parameters()), lr=opt.lr * opt.gpu_number)
     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr * opt.gpu_number)
 
-    # resume from existed model
-    if opt.resume != '':
-            # Map model to be loaded to specified single gpu.
-            loc = 'cuda:{}'.format(gpu)
-            checkpoint = torch.load('{}'.format(opt.resume), map_location=loc)
-            model_dict = estimator.state_dict()
-            same_dict = {k: v for k, v in checkpoint['state_dict'].items() if k in model_dict.keys()}
-            model_dict.update(same_dict)
-            estimator.load_state_dict(model_dict)
-            opt.start_epoch = checkpoint['epoch']
-            print("loaded checkpoint '{}' (epoch {})".format(opt.resume, checkpoint['epoch']))
-
-
+    
     # init DDP dataloader
     dataset = pose_dataset('train', opt.num_points, opt.dataset_root, True, opt.noise_trans)
 
@@ -251,9 +270,22 @@ def per_processor(gpu, opt):
 
 
     # init loss model
-    train_loss = pose_net.get_loss(dataset = dataset, loss_type= opt.loss_type, train = True).to(gpu)
-    test_loss = pose_net.get_loss(dataset=dataset, loss_type=opt.loss_type, train = False).to(gpu)
+    train_loss = pose_net.get_loss(dataset = dataset, loss_type= opt.loss_type, train = True,out_channel=32).to(gpu)
+    # test_loss = pose_net.get_loss(dataset=dataset, loss_type=opt.loss_type, train = False).to(gpu)
 
+    # resume from existed model
+    if opt.resume != '':
+            # Map model to be loaded to specified single gpu.
+            loc = 'cuda:{}'.format(gpu)
+            checkpoint = torch.load('{}'.format(opt.resume), map_location=loc)
+            model_dict = estimator.state_dict()
+            same_dict = {k: v for k, v in checkpoint['state_dict'].items() if k in model_dict.keys()}
+            model_dict.update(same_dict)
+            estimator.load_state_dict(model_dict)
+            # train_loss.load_state_dict(model_dict)
+            # opt.start_epoch = checkpoint['epoch']
+            opt.start_epoch = 0
+            print("loaded checkpoint '{}' (epoch {})".format(opt.resume, checkpoint['epoch']))
 
     # epoch loop
     tensorboard_loss_list = []
@@ -263,7 +295,7 @@ def per_processor(gpu, opt):
 
         if gpu == 0:
             print('>>>>>>>>>>>test>>>>>>>>>>>')
-            test(test_loader, estimator, test_loss, 0, tensorboard_writer, tensorboard_test_list, opt)
+            test(test_loader, estimator, train_loss, 0, tensorboard_writer, tensorboard_test_list, opt)
             torch.cuda.empty_cache()
 
 
@@ -281,7 +313,7 @@ def per_processor(gpu, opt):
             torch.cuda.empty_cache()
 
             # save checkpoint
-            if gpu == 0 and epoch % 5 == 0:
+            if gpu == 0 and epoch % 5 == 0 or epoch==opt.nepoch:
                 print('>>>>>>>>>>>save checkpoint>>>>>>>>>>')
                 torch.save({
                     'epoch': epoch + 1,
@@ -290,11 +322,15 @@ def per_processor(gpu, opt):
 
 
             # test for one epoch
-            if gpu == 0 and epoch % 5 == 0:
+            if gpu == 0 and epoch % 5 == 0 or epoch==opt.nepoch:
                 print('>>>>>>>>>>>test>>>>>>>>>>>')
-                test(test_loader, estimator, test_loss, epoch, tensorboard_writer, tensorboard_test_list, opt)
+                # train(test_loader, estimator, train_loss, optimizer, epoch, tensorboard_writer, tensorboard_loss_list, opt)
+                test(test_loader, estimator, train_loss, epoch, tensorboard_writer, tensorboard_test_list, opt)
                 torch.cuda.empty_cache()
 
+        
+
+        
 
 def train(train_loader, estimator, lossor, optimizer, epoch, tensorboard_writer, tensorboard_loss_list, opt):
 
@@ -336,7 +372,7 @@ def train(train_loader, estimator, lossor, optimizer, epoch, tensorboard_writer,
             train_loss_list.append(loss_dict)
             log_function(train_loss_list, logger, epoch, i, cur_lr)
 
-            if len(train_loss_list) % 50 == 0:
+            if len(train_loss_list) % 100 == 0:#之前是50
                 l_dict = deepcopy(train_loss_list[-50])
                 for ld in train_loss_list[-49:]:
                     for key in ld:
@@ -378,8 +414,12 @@ def test(test_loader, estimator, lossor, epoch, tensorboard_writer, tensorboard_
 
             i += 1
 
+            
+            start_time = time.time()
             _, test_loss_dict, rt_list, gt_rt_list, gt_cls_list, model_list, instance_id_list, instance_eval_rt_list  = predict(data, estimator, lossor, opt, mode='test')
-
+            end_time = time.time()
+            print("运行时间：{}s".format(end_time-start_time))
+            
             total_rt_list += rt_list
             total_gt_list += gt_rt_list
             total_cls_list += gt_cls_list
@@ -387,7 +427,7 @@ def test(test_loader, estimator, lossor, epoch, tensorboard_writer, tensorboard_
             total_RT_list += instance_eval_rt_list
 
             # eval
-            tless_add_evaluator.eval_pose_parallel(rt_list, gt_cls_list, gt_rt_list, gt_cls_list, model_list)
+            tless_add_evaluator.eval_pose_parallel(rt_list, gt_cls_list, gt_rt_list, gt_cls_list, model_list)#计算好像只是使用了没有加mean——xyz的rt——list，而不是instance
 
             model_list = []
             for gt_cls in gt_cls_list:
@@ -402,7 +442,7 @@ def test(test_loader, estimator, lossor, epoch, tensorboard_writer, tensorboard_
                 test_loss_list.append(test_loss_dict)
                 log_function(test_loss_list, logger, epoch, i, opt.lr)
 
-        save_pred_and_gt_json(total_RT_list, total_instance_list, total_gt_list, total_cls_list, opt.log_dir)
+        save_pred_and_gt_json(total_RT_list, total_instance_list, total_gt_list, total_cls_list, opt.log_dir)#这里保存的又是total_RT_list，但是好像评估并没有用上
 
         # draw loss
         if opt.gpu == 0:

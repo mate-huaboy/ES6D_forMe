@@ -75,7 +75,7 @@ class TLESSADDval():
         print("**** add: {:.2f}, adds: {:.2f}, add(-s): {:.2f}".format(np.mean(add_auc_lst[1:]), np.mean(adds_auc_lst[1:]), np.mean(add_s_auc_lst[1:])))
         print("<2cm add: {:.2f}, adds: {:.2f}, add(-s): {:.2f}".format(np.mean(add_2cm_lst[1:]), np.mean(adds_2cm_lst[1:]), np.mean(add_s_2cm_lst[1:])))
 
-        print("All object (following PoseCNN):")
+        print("All object (following PoseCNN):")#poseCNN只评估了一个类吗
         print("**** add: {:.2f}, adds: {:.2f}, add(-s): {:.2f}".format(add_auc_lst[0], adds_auc_lst[0], add_s_auc_lst[0]))
         print("<2cm add: {:.2f}, adds: {:.2f}, add(-s): {:.2f}".format(add_2cm_lst[0], adds_2cm_lst[0], add_s_2cm_lst[0]))
 
@@ -94,7 +94,7 @@ class TLESSADDval():
         )
         # pkl.dump(sv_info, open(sv_pth, 'wb'))
 
-        return {'auc': add_s_auc_lst[0]}
+        return {'auc': adds_auc_lst[0]}
 
     def eval_pose_parallel(self, pred_RT_lst, pred_clsID_lst, gt_RT_lst, gt_clsID_lst, models_pts_lst):
 
@@ -106,7 +106,7 @@ class TLESSADDval():
 
                 cls_add_dis_lst, cls_adds_dis_lst = res
                 self.cls_add_dis = self.merge_lst( self.cls_add_dis, cls_add_dis_lst)
-                self.cls_adds_dis = self.merge_lst(self.cls_adds_dis, cls_adds_dis_lst)
+                self.cls_adds_dis = self.merge_lst(self.cls_adds_dis, cls_adds_dis_lst)#保持结果
 
 
     def merge_lst(self, targ, src):
@@ -186,7 +186,7 @@ def cal_auc(add_dis, max_dis=0.1, thr_m = 0.02):
     add_t_cm = np.where(D < thr_m)[0].size / D.size
 
     return aps * 100, add_t_cm * 100
-
+ 
 
 
 def VOCap(rec, prec):
